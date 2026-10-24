@@ -9,6 +9,7 @@ import { cancelBackgroundGeneration, cancelFollowUp } from "./follow-up-service"
 import { clearTimedWakeSchedule } from "./timed-wake-storage";
 import { saveStatusRegionConfig } from "./chat-status-region";
 import { setSessionKeyboardAutoSendDebounce, setSessionKeyboardAutoSendEnabled } from "./keyboard-auto-send-config";
+import { removeSessionAvatarOverrides } from "./chat-session-avatars";
 import { PENDING_REPLY_PREFIX } from "./friend-request-engine";
 import { kvRemove } from "./kv-db";
 
@@ -38,4 +39,6 @@ export function removeChatSessionCompletely(sessionId: string): void {
     // 键盘自动发送的按会话配置
     setSessionKeyboardAutoSendEnabled(sessionId, false);
     setSessionKeyboardAutoSendDebounce(sessionId, null);
+    // 本会话头像覆盖（按会话隔离存储，会话没了就一并收走）
+    removeSessionAvatarOverrides(sessionId);
 }

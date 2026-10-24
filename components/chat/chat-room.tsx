@@ -36,6 +36,7 @@ import { CustomAppRunner } from "@/components/app-market/custom-app-runner";
 import { CustomAppForegroundBoundary } from "@/components/app-market/custom-app-failure";
 
 import { ChatSettingsPanel } from "./chat-settings-panel";
+import { useSessionAvatars } from "./use-session-avatars";
 import { VoiceCallScreen } from "./voice-call-screen";
 import { VideoCallScreen } from "./video-call-screen";
 import { GroupCallScreen } from "./group-call-screen";
@@ -1197,6 +1198,9 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
 
     const [bgImageResolved, setBgImageResolved] = useState<string | null>(null);
     const [bgLoading, setBgLoading] = useState(!!session.backgroundImage);
+
+    // 本会话的头像覆盖（按会话隔离：同一角色在其他会话仍用角色卡原头像）
+    const sessionAvatars = useSessionAvatars(session.id);
 
     const wrapperRef = useRef<HTMLDivElement>(null);
 
@@ -5494,7 +5498,10 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                                 <div className="chat-offline-entry" data-role="user" style={offlineDisplay.userContent.trim() ? undefined : { display: "none" }}>
                                     {/* 头像占位：默认 display:none（见 chat.css），供自定义 CSS 显示 */}
                                     <div className="chat-offline-avatar" aria-hidden="true">
-                                        {userIdentity?.avatarUrl ? <img src={userIdentity.avatarUrl} alt="" /> : <User size={18} color="var(--c-text)" />}
+                                        {(() => {
+                                            const selfAvatar = sessionAvatars.forSelf(userIdentity?.avatarUrl || "");
+                                            return selfAvatar ? <img src={selfAvatar} alt="" /> : <User size={18} color="var(--c-text)" />;
+                                        })()}
                                     </div>
                                     <div className="chat-offline-label">你</div>
                                     <div
@@ -5524,7 +5531,10 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                                 <div className="chat-offline-entry" data-role="assistant">
                                     {/* 头像占位：默认 display:none（见 chat.css），供自定义 CSS 显示 */}
                                     <div className="chat-offline-avatar" aria-hidden="true">
-                                        {character?.avatar ? <img src={character.avatar} alt="" /> : <ChatFallbackAvatar />}
+                                        {(() => {
+                                            const avatarSrc = sessionAvatars.forCharacter(character?.id, character?.avatar || "");
+                                            return avatarSrc ? <img src={avatarSrc} alt="" /> : <ChatFallbackAvatar />;
+                                        })()}
                                     </div>
                                     <div className="chat-offline-label-row">
                                         <div className="chat-offline-label">{session.isGroup ? (session.groupName || "群聊") : (character?.name || "对方")}</div>
@@ -5609,7 +5619,10 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                                 <div className="chat-offline-entry" data-role="user" style={pendingOfflineUserText ? undefined : { display: "none" }}>
                                     {/* 头像占位：默认 display:none（见 chat.css），供自定义 CSS 显示 */}
                                     <div className="chat-offline-avatar" aria-hidden="true">
-                                        {userIdentity?.avatarUrl ? <img src={userIdentity.avatarUrl} alt="" /> : <User size={18} color="var(--c-text)" />}
+                                        {(() => {
+                                            const selfAvatar = sessionAvatars.forSelf(userIdentity?.avatarUrl || "");
+                                            return selfAvatar ? <img src={selfAvatar} alt="" /> : <User size={18} color="var(--c-text)" />;
+                                        })()}
                                     </div>
                                     <div className="chat-offline-label">你</div>
                                     <div className="chat-offline-text">
@@ -5625,7 +5638,10 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                                        正文用轻量 pre-wrap 渲染（避免每帧 markdown/双语解析），落库时原地换成正式排版 */
                                     <div className="chat-offline-entry" data-role="assistant">
                                         <div className="chat-offline-avatar" aria-hidden="true">
-                                            {character?.avatar ? <img src={character.avatar} alt="" /> : <ChatFallbackAvatar />}
+                                            {(() => {
+                                                const avatarSrc = sessionAvatars.forCharacter(character?.id, character?.avatar || "");
+                                                return avatarSrc ? <img src={avatarSrc} alt="" /> : <ChatFallbackAvatar />;
+                                            })()}
                                         </div>
                                         <div className="chat-offline-label-row">
                                             <div className="chat-offline-label">{session.isGroup ? (session.groupName || "群聊") : (character?.name || "对方")}</div>
@@ -5971,11 +5987,14 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                                                             : character;
                                                         if (targetChar) sendRichMessage("poke", { pokeTarget: targetChar.name });
                                                     }} className="w-[40px] h-[40px] rounded-[20px] bg-[var(--c-input)] overflow-hidden cursor-pointer">
-                                                        {senderChar?.avatar ? (
-                                                            <img src={senderChar.avatar} className="w-full h-full object-cover" alt="" />
-                                                        ) : (
-                                                            <ChatFallbackAvatar />
-                                                        )}
+                                                        {(() => {
+                                                            const avatarSrc = sessionAvatars.forCharacter(senderChar?.id, senderChar?.avatar || "");
+                                                            return avatarSrc ? (
+                                                                <img src={avatarSrc} className="w-full h-full object-cover" alt="" />
+                                                            ) : (
+                                                                <ChatFallbackAvatar />
+                                                            );
+                                                        })()}
                                                     </div>
                                                             </>
                                                         );
@@ -6052,11 +6071,14 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                                         )}
                                         {msg.role === "user" && !isEmptyBubble && (
                                             <div className="chat-msg-avatar w-[40px] h-[40px] rounded-[20px] bg-[var(--c-page-body-bg)] shrink-0 flex items-center justify-center overflow-hidden">
-                                                {userIdentity?.avatarUrl ? (
-                                                    <img src={userIdentity.avatarUrl} alt="Me" className="w-full h-full object-cover rounded-[20px]" />
-                                                ) : (
-                                                    <User size={20} color="var(--c-text)" />
-                                                )}
+                                                {(() => {
+                                                    const selfAvatar = sessionAvatars.forSelf(userIdentity?.avatarUrl || "");
+                                                    return selfAvatar ? (
+                                                        <img src={selfAvatar} alt="Me" className="w-full h-full object-cover rounded-[20px]" />
+                                                    ) : (
+                                                        <User size={20} color="var(--c-text)" />
+                                                    );
+                                                })()}
                                             </div>
                                         )}
                                     </>

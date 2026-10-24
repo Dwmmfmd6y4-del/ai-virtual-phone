@@ -179,6 +179,13 @@ import {
     DEFAULT_OFFLINE_CHAT_BILINGUAL_PROMPT,
 } from "@/lib/bilingual-prompt-defaults";
 import { ChatFallbackAvatar } from "./chat-fallback-avatar";
+import { useSessionAvatars } from "./use-session-avatars";
+import {
+    SESSION_AVATAR_SELF_KEY,
+    clearSessionAvatar,
+    getSessionAvatarOverrides,
+    saveSessionAvatarImage,
+} from "@/lib/chat-session-avatars";
 import { MessageBubble, isStandaloneHtmlPreviewContent } from "./message-bubble";
 import { ScreenEffectSettingsModal } from "./screen-effect-settings-modal";
 
@@ -697,6 +704,27 @@ export function ChatSettingsPanel({
         }
     };
 
+    // ── 本会话头像覆盖：只改这一个会话里的显示，不动角色卡与全局身份头像 ──
+    const sessionAvatars = useSessionAvatars(session.id);
+    const [avatarOverrides, setAvatarOverrides] = useState<Record<string, string>>(() => getSessionAvatarOverrides(session.id));
+    const handleSessionAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>, key: string) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        try {
+            await saveSessionAvatarImage(session.id, key, file);
+            setAvatarOverrides(getSessionAvatarOverrides(session.id));
+        } catch (error) {
+            console.error("Failed to save session avatar", error);
+            alert("头像保存失败，请重试");
+        } finally {
+            e.target.value = "";
+        }
+    };
+    const resetSessionAvatar = (key: string) => {
+        clearSessionAvatar(session.id, key);
+        setAvatarOverrides(getSessionAvatarOverrides(session.id));
+    };
+
     // Group video: per-participant background upload
     const [groupVideoBgs, setGroupVideoBgs] = useState<Record<string, string>>(session.groupVideoBackgrounds || {});
     const handleGroupVideoBgUpload = async (e: React.ChangeEvent<HTMLInputElement>, participantKey: string) => {
@@ -764,11 +792,14 @@ export function ChatSettingsPanel({
                     <div className="chat-msg-wrapper" data-role={resultRole}>
                         {resultRole === "assistant" && (
                             <div className="chat-msg-avatar w-[40px] h-[40px] rounded-[20px] bg-[var(--c-page-body-bg)] shrink-0 flex items-center justify-center overflow-hidden">
-                                {senderChar?.avatar ? (
-                                    <img src={senderChar.avatar} className="w-full h-full object-cover" alt="" />
-                                ) : (
-                                    <ChatFallbackAvatar />
-                                )}
+                                {(() => {
+                                    const avatarSrc = sessionAvatars.forCharacter(senderChar?.id, senderChar?.avatar || "");
+                                    return avatarSrc ? (
+                                        <img src={avatarSrc} className="w-full h-full object-cover" alt="" />
+                                    ) : (
+                                        <ChatFallbackAvatar />
+                                    );
+                                })()}
                             </div>
                         )}
                         <div className={`chat-msg-content-wrap flex flex-col min-w-0 max-w-[70%] ${isStandaloneHtmlPreview ? "chat-msg-content-wrap-html" : ""}`}>
@@ -809,11 +840,14 @@ export function ChatSettingsPanel({
                         </div>
                         {resultRole === "user" && (
                             <div className="chat-msg-avatar w-[40px] h-[40px] rounded-[20px] bg-[var(--c-page-body-bg)] shrink-0 flex items-center justify-center overflow-hidden">
-                                {userIdentity?.avatarUrl ? (
-                                    <img src={userIdentity.avatarUrl} alt="Me" className="w-full h-full object-cover rounded-[20px]" />
-                                ) : (
-                                    <ChatFallbackAvatar />
-                                )}
+                                {(() => {
+                                    const selfAvatar = sessionAvatars.forSelf(userIdentity?.avatarUrl || "");
+                                    return selfAvatar ? (
+                                        <img src={selfAvatar} alt="Me" className="w-full h-full object-cover rounded-[20px]" />
+                                    ) : (
+                                        <ChatFallbackAvatar />
+                                    );
+                                })()}
                             </div>
                         )}
                     </div>
@@ -1218,6 +1252,78 @@ export function ChatSettingsPanel({
                             <ChevronRight size={16} />
                         </div>
                         <input type="file" accept="image/*" onChange={e => handleImageUpload(e, setVoiceBackground, "voiceBackground")} className="hidden" />
+                    </label>
+                </div>
+
+                {/* 本会话头像：对方与我各自独立替换，只在这个会话生效。
+                    同一个角色在别的会话里仍显示角色卡原头像，用户在别处仍是全局身份头像。 */}
+                <div className="menu-group">
+                    <div className="menu-item" style={{ cursor: "default" }}>
+                        <ChatInfoIcon icon={ImageIcon} color={CONTENT_APP_ACCENTS.chat} />
+                        <div className="menu-label-group">
+                            <span className="menu-label">本会话头像</span>
+                            <span className="menu-desc">只改这个聊天里的显示，不影响该角色在其他聊天里的头像</span>
+                        </div>
+                    </div>
+                    {(session.isGroup ? groupChars.map(c => ({ key: c!.id, name: c!.name, fallback: c!.avatar || "" })) : [{
+                        key: session.contactId,
+                        name: alias || character?.name || "对方",
+                        fallback: character?.avatar || "",
+                    }]).map(target => {
+                        const current = sessionAvatars.forCharacter(target.key, target.fallback);
+                        const overridden = !!avatarOverrides[target.key];
+                        return (
+                            <label className="menu-item" key={target.key} style={{ paddingLeft: 72 }}>
+                                <div className="w-[24px] h-[24px] rounded-full overflow-hidden bg-[var(--c-input)] shrink-0 flex items-center justify-center">
+                                    {current ? <img src={current} className="w-full h-full object-cover" alt="" /> : <ChatFallbackAvatar />}
+                                </div>
+                                <div className="menu-label-group"><span className="menu-label">{target.name}</span></div>
+                                <div className="menu-right">
+                                    {overridden && (
+                                        <>
+                                            <span className="menu-desc mr-1">已更换</span>
+                                            <button
+                                                className="menu-desc mr-1 text-[var(--c-danger)]"
+                                                onClick={e => { e.preventDefault(); resetSessionAvatar(target.key); }}
+                                            >
+                                                恢复默认
+                                            </button>
+                                        </>
+                                    )}
+                                    <ChevronRight size={14} />
+                                </div>
+                                <input type="file" accept="image/*" onChange={e => handleSessionAvatarUpload(e, target.key)} className="hidden" />
+                            </label>
+                        );
+                    })}
+                    <label className="menu-item" style={{ paddingLeft: 72 }}>
+                        {(() => {
+                            const selfAvatar = sessionAvatars.forSelf(userIdentity?.avatarUrl || "");
+                            const selfOverridden = !!avatarOverrides[SESSION_AVATAR_SELF_KEY];
+                            return (
+                                <>
+                                    <div className="w-[24px] h-[24px] rounded-full overflow-hidden bg-[var(--c-input)] shrink-0 flex items-center justify-center">
+                                        {selfAvatar ? <img src={selfAvatar} className="w-full h-full object-cover" alt="" /> : <ChatFallbackAvatar />}
+                                    </div>
+                                    <div className="menu-label-group"><span className="menu-label">{userIdentity?.name || "我"}（我）</span></div>
+                                    <div className="menu-right">
+                                        {selfOverridden && (
+                                            <>
+                                                <span className="menu-desc mr-1">已更换</span>
+                                                <button
+                                                    className="menu-desc mr-1 text-[var(--c-danger)]"
+                                                    onClick={e => { e.preventDefault(); resetSessionAvatar(SESSION_AVATAR_SELF_KEY); }}
+                                                >
+                                                    恢复默认
+                                                </button>
+                                            </>
+                                        )}
+                                        <ChevronRight size={14} />
+                                    </div>
+                                    <input type="file" accept="image/*" onChange={e => handleSessionAvatarUpload(e, SESSION_AVATAR_SELF_KEY)} className="hidden" />
+                                </>
+                            );
+                        })()}
                     </label>
                 </div>
 

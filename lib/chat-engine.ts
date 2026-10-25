@@ -73,6 +73,7 @@ import { isNeteaseConfigured, getUserPlaylists, getPlaylistTracks, checkLoginSta
 import { buildCalendarScheduleMarker, getCurrentCalendarScheduleForPrompt } from "./calendar-storage";
 import { getWeekStartIso } from "./calendar-utils";
 import { buildCharacterTimeContext } from "./character-time";
+import { buildSessionTimeDiffLine, resolveSessionCharTimeZone } from "./chat-session-timezone";
 import { getPromptTimestampOptionsForTimeContext } from "./prompt-time";
 import { kvGet, kvSet, registerKvMigration } from "./kv-db";
 import { pushApiLog } from "./api-log-store";
@@ -1877,7 +1878,9 @@ export async function buildChatPromptMessages(
         : history;
 
     const now = new Date();
-    const promptTimeContext = buildCharacterTimeContext(character.timeZone, now);
+    // 角色时区：会话级「时差设置」优先于角色卡 timeZone（只影响这一个会话）
+    const sessionCharTimeZone = resolveSessionCharTimeZone(session.id, character.timeZone);
+    const promptTimeContext = buildCharacterTimeContext(sessionCharTimeZone, now);
     const promptTimestampOptions = getPromptTimestampOptionsForTimeContext(promptTimeContext);
     const memConfig = loadMemoryConfig();
     const isOfflineMode = options?.appTags?.includes("offline") === true;
@@ -1982,6 +1985,18 @@ export async function buildChatPromptMessages(
         offlineSummaryTag: preset?.story_summary_tag?.trim() || "summary",
         nativeToolHistory: usesNativeActions,
     });
+    // 时差一行：只陈述双方当前时间与角色所处时段，不写行为指令——
+    // 写长了会与预设的人设规则抢注意力，容易把角色带崩。没配/无时差时不注入。
+    const sessionTimeDiffLine = buildSessionTimeDiffLine(session.id, {
+        userName: userIdentity?.name,
+        charName: character.name,
+        characterTimeZone: character.timeZone,
+        now,
+    });
+    if (sessionTimeDiffLine) {
+        llmMessages.push({ role: "system", content: sessionTimeDiffLine });
+    }
+
     if (promptProfile?.output === "plain_text") {
         llmMessages.push({
             role: "system",

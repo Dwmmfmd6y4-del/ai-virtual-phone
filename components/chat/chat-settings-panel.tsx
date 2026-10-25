@@ -44,12 +44,12 @@ import { downloadFile } from "@/lib/download-utils";
 import { getSchemes, saveScheme, deleteScheme, type CSSScheme } from "@/lib/css-scheme-storage";
 import { CustomStatusFrame } from "@/components/chat/custom-status-frame";
 import { KeyboardAutoSendDebounceItem } from "@/components/chat/keyboard-auto-send-debounce-item";
-import { ChevronRight, Image as ImageIcon, Video, Mic, UserMinus, UserPlus, Users, Pin, MessageSquare, Search, AlertCircle, Code, Laptop, Trash2, Smile, Sparkles, X, Play, Upload, Download, Save, FolderOpen, type LucideIcon } from "lucide-react";
+import { ChevronRight, Image as ImageIcon, Video, Mic, UserMinus, UserPlus, Users, Pin, MessageSquare, Search, AlertCircle, Code, Laptop, Trash2, Smile, Sparkles, X, Play, Upload, Download, Save, FolderOpen, Clock, type LucideIcon } from "lucide-react";
 import { BINDING_ACCENTS, CONTENT_APP_ACCENTS } from "@/lib/ui-accent-colors";
 import CSSSchemeBar from "@/components/ui/css-scheme-picker";
 import { ConfirmDialog } from "@/components/ui/modal";
 import { CHAT_SESSION_CSS_EXAMPLE } from "@/lib/css-examples";
-import { Toggle, Input } from "@/components/ui/form";
+import { Toggle, Input, Select } from "@/components/ui/form";
 import { PageShell } from "@/components/ui/page-shell";
 
 // 自定义状态栏预填模板：微博主页（契约=「状态栏」章节整段正文，含【逻辑】【格式】与包裹要求）
@@ -186,6 +186,15 @@ import {
     getSessionAvatarOverrides,
     saveSessionAvatarImage,
 } from "@/lib/chat-session-avatars";
+import {
+    COMMON_TIME_ZONES,
+    CHAT_SESSION_TIMEZONE_UPDATED_EVENT,
+    getSessionTimeDiffSnapshot,
+    getSessionTimeZoneConfig,
+    saveSessionTimeZoneConfig,
+    type SessionTimeZoneConfig,
+} from "@/lib/chat-session-timezone";
+import { getSystemTimeZone } from "@/lib/character-time";
 import { MessageBubble, isStandaloneHtmlPreviewContent } from "./message-bubble";
 import { ScreenEffectSettingsModal } from "./screen-effect-settings-modal";
 
@@ -725,6 +734,37 @@ export function ChatSettingsPanel({
         setAvatarOverrides(getSessionAvatarOverrides(session.id));
     };
 
+    // ── 本会话时差：我的时区 / TA 的时区，只作用于这一个会话 ──
+    // 存储走 chat-session-timezone（按 sessionId 分桶），不动角色卡 timeZone 与全局设置。
+    const systemTimeZone = useMemo(() => getSystemTimeZone(), []);
+    const [timeZoneConfig, setTimeZoneConfig] = useState<SessionTimeZoneConfig>(() => getSessionTimeZoneConfig(session.id));
+    // 预览时间每 30 秒走一次，面板开着也能看到分钟变化
+    const [timeDiffTick, setTimeDiffTick] = useState(0);
+    useEffect(() => {
+        const timer = window.setInterval(() => setTimeDiffTick(v => v + 1), 30_000);
+        return () => window.clearInterval(timer);
+    }, []);
+    // 别处（小卷/其他页面）改了同一会话的时差配置时同步刷新
+    useEffect(() => {
+        const onExternalWrite = (event: Event) => {
+            const detail = (event as CustomEvent<{ sessionId?: string }>).detail;
+            if (detail?.sessionId && detail.sessionId !== session.id) return;
+            setTimeZoneConfig(getSessionTimeZoneConfig(session.id));
+        };
+        window.addEventListener(CHAT_SESSION_TIMEZONE_UPDATED_EVENT, onExternalWrite);
+        return () => window.removeEventListener(CHAT_SESSION_TIMEZONE_UPDATED_EVENT, onExternalWrite);
+    }, [session.id]);
+    const updateTimeZoneConfig = (patch: Partial<SessionTimeZoneConfig>) => {
+        const next: SessionTimeZoneConfig = { ...timeZoneConfig, ...patch };
+        setTimeZoneConfig(next);
+        saveSessionTimeZoneConfig(session.id, next); // 选完立刻落盘，下一条消息就生效
+    };
+    const timeDiffSnapshot = useMemo(
+        () => (session.isGroup ? null : getSessionTimeDiffSnapshot(session.id, character?.timeZone)),
+        // timeDiffTick / timeZoneConfig 变化时重算当前时间
+        [session.id, session.isGroup, character?.timeZone, timeZoneConfig, timeDiffTick],
+    );
+
     // Group video: per-participant background upload
     const [groupVideoBgs, setGroupVideoBgs] = useState<Record<string, string>>(session.groupVideoBackgrounds || {});
     const handleGroupVideoBgUpload = async (e: React.ChangeEvent<HTMLInputElement>, participantKey: string) => {
@@ -965,6 +1005,79 @@ export function ChatSettingsPanel({
                         <input type="file" accept="image/*" onChange={e => handleSessionAvatarUpload(e, SESSION_AVATAR_SELF_KEY)} className="hidden" />
                     </label>
                 </div>
+
+                {/* 时差设置：我的时区 / TA 的时区，按会话存储。
+                    选完立刻保存，下一条消息的 system prompt 里会多出极短的一行
+                    「[时差] 我 14:00，TA 02:00（深夜）」——只给事实不给指令，避免抢人设注意力。
+                    群聊不显示：群成员各自时区仍由角色卡 timeZone 决定。 */}
+                {!session.isGroup && (
+                    <div className="menu-group">
+                        <div className="menu-item" style={{ cursor: "default" }}>
+                            <ChatInfoIcon icon={Clock} color={BINDING_ACCENTS.memory} />
+                            <div className="menu-label-group">
+                                <span className="menu-label">时差设置</span>
+                                <span className="menu-desc">
+                                    {timeDiffSnapshot
+                                        ? (timeDiffSnapshot.hasDifference
+                                            ? `我 ${timeDiffSnapshot.userTime} ／ TA ${timeDiffSnapshot.charTime}${timeDiffSnapshot.charPhase ? `（${timeDiffSnapshot.charPhase}）` : ""}`
+                                            : "两边当前时间一致，本轮不注入时差")
+                                        : "设置 TA 的时区后，对话会带上双方当前时间"}
+                                </span>
+                            </div>
+                        </div>
+                        <div className="menu-item" style={{ cursor: "default", paddingLeft: 72 }}>
+                            <div className="menu-label-group">
+                                <span className="menu-label">我的时区</span>
+                                <span className="menu-desc">默认跟随本机：{systemTimeZone}</span>
+                            </div>
+                            <div className="menu-right">
+                                <Select
+                                    className="h-8 max-w-[170px]"
+                                    value={timeZoneConfig.userTimeZone}
+                                    onChange={e => updateTimeZoneConfig({ userTimeZone: e.target.value })}
+                                >
+                                    <option value="">跟随本机</option>
+                                    {COMMON_TIME_ZONES.map(zone => (
+                                        <option key={zone.value} value={zone.value}>{zone.label}</option>
+                                    ))}
+                                </Select>
+                            </div>
+                        </div>
+                        <div className="menu-item" style={{ cursor: "default", paddingLeft: 72 }}>
+                            <div className="menu-label-group">
+                                <span className="menu-label">TA 的时区</span>
+                                <span className="menu-desc">
+                                    {character?.timeZone
+                                        ? `不选则用角色卡设置：${character.timeZone}`
+                                        : "角色卡未设时区；不选则不启用时差"}
+                                </span>
+                            </div>
+                            <div className="menu-right">
+                                <Select
+                                    className="h-8 max-w-[170px]"
+                                    value={timeZoneConfig.charTimeZone}
+                                    onChange={e => updateTimeZoneConfig({ charTimeZone: e.target.value })}
+                                >
+                                    <option value="">{character?.timeZone ? "跟随角色卡" : "不启用"}</option>
+                                    {COMMON_TIME_ZONES.map(zone => (
+                                        <option key={zone.value} value={zone.value}>{zone.label}</option>
+                                    ))}
+                                </Select>
+                            </div>
+                        </div>
+                        {(timeZoneConfig.userTimeZone || timeZoneConfig.charTimeZone) && (
+                            <button
+                                className="menu-item"
+                                style={{ paddingLeft: 72 }}
+                                onClick={() => updateTimeZoneConfig({ userTimeZone: "", charTimeZone: "" })}
+                            >
+                                <div className="menu-label-group">
+                                    <span className="menu-label menu-label-danger">清除本会话时差设置</span>
+                                </div>
+                            </button>
+                        )}
+                    </div>
+                )}
 
                 {/* Group member management */}
                 {session.isGroup && (

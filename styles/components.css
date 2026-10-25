@@ -2462,6 +2462,29 @@
   flex: 1;
   min-width: 0;
 }
+.menu-label-group > .menu-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.menu-item-stacked {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  cursor: default;
+}
+.menu-item-stacked > .menu-label-group {
+  flex: 0 0 auto;
+  width: 100%;
+}
+.menu-item-stacked .ui-select {
+  width: 100%;
+}
+/* 竖排行里若仍放右侧控件区，让它占满整行而不是被挤在角上 */
+.menu-item-stacked > .menu-right {
+  flex: 1;
+  min-width: 0;
+}
 
 .menu-label {
   font-size: calc(12.6px*var(--app-text-scale,1));

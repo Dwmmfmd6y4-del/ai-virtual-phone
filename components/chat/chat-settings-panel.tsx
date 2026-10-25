@@ -1025,25 +1025,22 @@ export function ChatSettingsPanel({
                                 </span>
                             </div>
                         </div>
-                        <div className="menu-item" style={{ cursor: "default", paddingLeft: 72 }}>
+                        <div className="menu-item menu-item-stacked">
                             <div className="menu-label-group">
                                 <span className="menu-label">我的时区</span>
                                 <span className="menu-desc">默认跟随本机：{systemTimeZone}</span>
                             </div>
-                            <div className="menu-right">
-                                <Select
-                                    className="h-8 max-w-[170px]"
-                                    value={timeZoneConfig.userTimeZone}
-                                    onChange={e => updateTimeZoneConfig({ userTimeZone: e.target.value })}
-                                >
-                                    <option value="">跟随本机</option>
-                                    {COMMON_TIME_ZONES.map(zone => (
-                                        <option key={zone.value} value={zone.value}>{zone.label}</option>
-                                    ))}
-                                </Select>
-                            </div>
+                            <Select
+                                value={timeZoneConfig.userTimeZone}
+                                onChange={e => updateTimeZoneConfig({ userTimeZone: e.target.value })}
+                            >
+                                <option value="">跟随本机</option>
+                                {COMMON_TIME_ZONES.map(zone => (
+                                    <option key={zone.value} value={zone.value}>{zone.label}</option>
+                                ))}
+                            </Select>
                         </div>
-                        <div className="menu-item" style={{ cursor: "default", paddingLeft: 72 }}>
+                        <div className="menu-item menu-item-stacked">
                             <div className="menu-label-group">
                                 <span className="menu-label">TA 的时区</span>
                                 <span className="menu-desc">
@@ -1052,23 +1049,19 @@ export function ChatSettingsPanel({
                                         : "角色卡未设时区；不选则不启用时差"}
                                 </span>
                             </div>
-                            <div className="menu-right">
-                                <Select
-                                    className="h-8 max-w-[170px]"
-                                    value={timeZoneConfig.charTimeZone}
-                                    onChange={e => updateTimeZoneConfig({ charTimeZone: e.target.value })}
-                                >
-                                    <option value="">{character?.timeZone ? "跟随角色卡" : "不启用"}</option>
-                                    {COMMON_TIME_ZONES.map(zone => (
-                                        <option key={zone.value} value={zone.value}>{zone.label}</option>
-                                    ))}
-                                </Select>
-                            </div>
+                            <Select
+                                value={timeZoneConfig.charTimeZone}
+                                onChange={e => updateTimeZoneConfig({ charTimeZone: e.target.value })}
+                            >
+                                <option value="">{character?.timeZone ? "跟随角色卡" : "不启用"}</option>
+                                {COMMON_TIME_ZONES.map(zone => (
+                                    <option key={zone.value} value={zone.value}>{zone.label}</option>
+                                ))}
+                            </Select>
                         </div>
                         {(timeZoneConfig.userTimeZone || timeZoneConfig.charTimeZone) && (
                             <button
                                 className="menu-item"
-                                style={{ paddingLeft: 72 }}
                                 onClick={() => updateTimeZoneConfig({ userTimeZone: "", charTimeZone: "" })}
                             >
                                 <div className="menu-label-group">

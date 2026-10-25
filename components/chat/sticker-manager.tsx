@@ -22,12 +22,15 @@ import {
     togglePackAssignment,
     resolvePackStickerMap,
     getCharacterPackIds,
+    isStickerShareAllEnabled,
+    setStickerShareAllEnabled,
     type StickerItem,
     type StickerPack,
 } from "@/lib/custom-sticker-storage";
 import { loadChatContacts } from "@/lib/chat-storage";
 import { PageShell } from "@/components/ui/page-shell";
 import { ConfirmDialog } from "@/components/ui/modal";
+import { Toggle } from "@/components/ui/form";
 
 export function StickerManager({ onBack }: { onBack: () => void }) {
     const contactIds = new Set(loadChatContacts().map(c => c.characterId));
@@ -36,9 +39,15 @@ export function StickerManager({ onBack }: { onBack: () => void }) {
     const [editingPack, setEditingPack] = useState<StickerPack | null>(null);
     const [showCreateDialog, setShowCreateDialog] = useState(false);
     const [deletingPackId, setDeletingPackId] = useState<string | null>(null);
+    const [shareAll, setShareAll] = useState(true);
 
     const refresh = () => setPacks(loadStickerPacks());
-    useEffect(() => { refresh(); }, []);
+    useEffect(() => { refresh(); setShareAll(isStickerShareAllEnabled()); }, []);
+
+    const handleToggleShareAll = (next: boolean) => {
+        setStickerShareAllEnabled(next);
+        setShareAll(next);
+    };
 
     const handleConfirmDeletePack = async () => {
         if (!deletingPackId) return;
@@ -59,10 +68,26 @@ export function StickerManager({ onBack }: { onBack: () => void }) {
     return (
         <PageShell title="表情包管理" onBack={onBack} className="absolute inset-0 z-[100]">
             <div className="px-5 pt-4 pb-8 h-full overflow-y-auto">
+                {/* 全局共享开关：默认开启，新建/导入角色无需手动绑定即可用全部表情包 */}
+                <div
+                    className="flex items-center gap-3 bg-[var(--c-card)] rounded-[18px] px-4 py-3 mb-4"
+                    style={{ boxShadow: "0 8px 24px rgba(0,0,0,0.025)" }}
+                >
+                    <div className="flex flex-col min-w-0 flex-1">
+                        <span className="ts-14 font-bold text-[var(--c-text-title)]">所有角色共享表情包</span>
+                        <span className="ts-11 text-[var(--c-text)] opacity-60 mt-0.5">
+                            {shareAll ? "开启中：新角色自动拥有全部图集，无需逐个绑定" : "已关闭：按下方「智能角色绑定」逐个生效"}
+                        </span>
+                    </div>
+                    <Toggle checked={shareAll} onChange={handleToggleShareAll} />
+                </div>
+
                 <div className="grid grid-cols-2 gap-4">
                     {packs.map((pack, i) => {
                         const assignedIds = getPackAssignments(pack.id);
-                        const assignedNames = characters.filter(c => assignedIds.includes(c.id)).map(c => c.name);
+                        const assignedNames = shareAll
+                            ? ["全部角色"]
+                            : characters.filter(c => assignedIds.includes(c.id)).map(c => c.name);
                         
                         // Pick a dynamic gradient based on index so the grid looks vibrant
                         const gradients = [
@@ -524,6 +549,11 @@ function PackEditor({ pack, onBack }: { pack: StickerPack; onBack: () => void })
                 {/* Character assignment section */}
                 <div className="px-6 pt-4 pb-2 shrink-0">
                     <div className="text-[calc(12px*var(--app-text-scale,1))] font-bold text-[var(--c-text)] opacity-60 uppercase mb-3 px-1 tracking-[0.1em]">智能角色绑定</div>
+                    {isStickerShareAllEnabled() && (
+                        <div className="ts-11 text-[var(--c-text)] opacity-55 px-1 mb-2">
+                            「所有角色共享表情包」已开启，当前全部角色都能用这套图集；下面的绑定会保留，关闭共享后重新生效。
+                        </div>
+                    )}
                     <div className="flex flex-wrap gap-2.5 px-1">
                         {characters.map(c => {
                             const active = assignedCharIds.includes(c.id);

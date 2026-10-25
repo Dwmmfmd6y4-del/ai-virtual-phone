@@ -15,8 +15,10 @@ import { kvGet, kvSet, registerKvMigration } from "./kv-db";
 
 const PACKS_KEY = "ai_phone_sticker_packs_v1";
 const ASSIGN_KEY = "ai_phone_sticker_assign_v1";
+const SHARE_ALL_KEY = "ai_phone_sticker_share_all_v1";
 registerKvMigration(PACKS_KEY);
 registerKvMigration(ASSIGN_KEY);
+registerKvMigration(SHARE_ALL_KEY);
 const STICKER_MAX_SIZE = 200; // px
 
 // ── Types ──
@@ -235,6 +237,24 @@ export async function removeStickerFromPack(packId: string, stickerId: string): 
     if (removed.assetId) await deleteThemeAsset(removed.assetId);
 }
 
+// ── 全局共享开关 ──
+// 默认 true：不想一个个角色去绑图集的用户开箱即用，新建角色立刻能用全部表情包。
+// 关掉后回落到 packId → characterId[] 的精确绑定（绑定数据一直原样保留，不会被开关清掉）。
+
+export function isStickerShareAllEnabled(): boolean {
+    if (typeof window === "undefined") return true;
+    try {
+        const raw = kvGet(SHARE_ALL_KEY);
+        // 没写过 = 从未设置 → 默认开启
+        return raw === null || raw === undefined ? true : raw !== "false";
+    } catch { return true; }
+}
+
+export function setStickerShareAllEnabled(enabled: boolean): void {
+    if (typeof window === "undefined") return;
+    kvSet(SHARE_ALL_KEY, enabled ? "true" : "false");
+}
+
 // ── Pack ↔ Character assignments ──
 
 export function getPackAssignments(packId: string): string[] {
@@ -254,8 +274,9 @@ export function togglePackAssignment(packId: string, characterId: string): void 
     writeAssignments(map);
 }
 
-/** Get all pack IDs assigned to a character. */
+/** Get all pack IDs assigned to a character. 共享开关开启时 = 全部图集。 */
 export function getCharacterPackIds(characterId: string): string[] {
+    if (isStickerShareAllEnabled()) return readPacks().map(p => p.id);
     const map = readAssignments();
     const result: string[] = [];
     for (const [packId, charIds] of Object.entries(map)) {
@@ -268,6 +289,7 @@ export function getCharacterPackIds(characterId: string): string[] {
 export function loadStickerPacksForCharacters(characterIds: string[]): StickerPack[] {
     const ids = new Set(characterIds.filter(Boolean));
     if (ids.size === 0) return [];
+    if (isStickerShareAllEnabled()) return readPacks();
     const assignments = readAssignments();
     return readPacks().filter(pack => {
         const assignedIds = assignments[pack.id] ?? [];
